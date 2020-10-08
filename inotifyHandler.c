@@ -8,9 +8,36 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 #include <time.h>
+#include "arguments.h"
+#include "udpClient.c"
+#include <execinfo.h>
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENT_BUF_LEN (1024 * (EVENT_SIZE + 16))
+char date[1024];
 
+void  __attribute__ ((no_instrument_function))  __cyg_profile_func_enter (void *this_fn,
+                                         void *call_site)
+{
+  	nptrs = backtrace(back_buffer, BT_BUF_SIZE);
+}
+
+void  __attribute__ ((no_instrument_function))  __cyg_profile_func_exit (void *this_fn,
+                                         void *call_site)
+{
+    nptrs = backtrace(back_buffer, BT_BUF_SIZE);
+}
+
+void formatDateToString()
+{   
+   time_t rawtime;
+   struct tm *info;
+   time( &rawtime );
+
+   info = localtime( &rawtime );
+
+   strftime(date,80,"%d %B %Y: %H:%S", info);
+
+}
 int write_to_HTML()
 {
     char *line = NULL;
@@ -43,14 +70,14 @@ int write_to_HTML()
     return 0;
 }
 
-int main()
+void* inotifyHandler(void* args)
 {
+    struct arguments* inotify_args=(struct arguments*)args;
     int length, i = 0;
     int fd;
     int wd;
     char buffer[EVENT_BUF_LEN];
-    time_t t = time(NULL);
-    struct tm tm = *localtime(&t);
+
     FILE *fp = fopen("events.txt", "w");
     /*creating the INOTIFY instance*/
     fd = inotify_init();
@@ -65,19 +92,21 @@ int main()
         if (fr == NULL)
         {
             printf("Could not write to index.html webrowser\n");
-            return -1;
+            return NULL; 
         }
         fclose(fr);
+    
+    udpClientConnect(inotify_args); //connect to server
 
-    /*read to determine the event change happens on “/tmp” directory. Actually this read blocks until the change event occurs*/
+
+    /*read to determine the event change happens on the chosen directory. Actually this read blocks until the change event occurs*/
 
     while (1)
     {
         i = 0;
 
-        /*adding the “/tmp” directory into watch list. Here, the suggestion is to validate the existence of the directory before adding into monitoring list.*/
-        wd = inotify_add_watch(fd, "/home/ubuntu/Desktop/Test", IN_ACCESS | IN_MODIFY);
-
+        /*adding the chosen directory into watch list. Here, the suggestion is to validate the existence of the directory before adding into monitoring list.*/
+        wd = inotify_add_watch(fd,inotify_args->directory, IN_ACCESS | IN_MODIFY);
         length = read(fd, buffer, EVENT_BUF_LEN);
 
         /*checking for error*/
@@ -92,31 +121,34 @@ int main()
             struct inotify_event *event = (struct inotify_event *)&buffer[i];
             if (event->len)
             {
+                
+                formatDateToString();
                 if (event->mask & IN_ACCESS)
                 {
                     printf("File %s have been read.\n", event->name);
-                    printf("now: %d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-                    fprintf(fp, "Event was created at %d-%02d-%02d %02d:%02d:%02d |%s| Type:READ\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, event->name);
+                    fprintf(fp, "Event was created at %s |%s| Type:READ\n",date, event->name);
                     fflush(fp);
                     write_to_HTML();
+                    sendMessageToRemoteServer(event->name,"NO_WRITE",date);
                 }
                 if (event->mask & IN_MODIFY)
                 {
                     printf("File %s have been modified.\n", event->name);
-                    printf("now: %d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-                    fprintf(fp, "Event was created at %d-%02d-%02d %02d:%02d:%02d |%s| Type: WRITE\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, event->name);
+                    fprintf(fp, "Event was created at %s |%s| Type:WRITE\n",date,event->name);
                     fflush(fp);
                     write_to_HTML();
+                    sendMessageToRemoteServer(event->name,"WRITE",date);
                 }
             }
             i += EVENT_SIZE + event->len;
         }
 
-        /*removing the “/tmp” directory from the watch list.*/
+        /*removing the chosen directory from the watch list.*/
         inotify_rm_watch(fd, wd);
 
         /*closing the INOTIFY instance*/
     }
+    closeSocket(); 
     close(fd);
     fclose(fp);
 }

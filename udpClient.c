@@ -51,10 +51,10 @@ int udpClientConnect(void *args)
 
 int sendMessageToRemoteServer(char *filename, char *access_type, char *time)
 {
-    char toSend[5000];
+    char toSend[5000] = {'\0'};
     sprintf(toSend, "FILE ACCESSED: %s/%s\nACCESS:%s\nDATE:%s\n", udp_args->directory, filename, access_type,time);
     puts(toSend); 
-    if ((nsent = send(sockfd, toSend, 1024, 0)) < 0)
+    if ((nsent = send(sockfd, toSend, strlen(toSend), 0)) < 0)
         perror("Error");
     return 0;
 }
