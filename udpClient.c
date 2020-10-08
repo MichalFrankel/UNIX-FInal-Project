@@ -8,7 +8,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "arguments.h"
-#include "serverMessage.h"
 
 #define PORT 10000
 #define MAXLINE 1024
